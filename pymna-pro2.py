@@ -10,7 +10,30 @@ from tkinter import messagebox
 import re
 import matplotlib.pyplot as plt
 from tkinter import simpledialog
+import webbrowser
 import os
+import sys
+
+# Version Information
+VERSION = "2.1.0"
+LAST_UPDATE = "2026-03-31"
+
+# Enable High DPI Awareness on Windows
+if sys.platform.startswith('win'):
+    try:
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(1)
+    except:
+        pass
+
+# URL definitions for preset circuit diagrams
+PRESET_URLS = {
+    "div": "https://raw.githubusercontent.com/zyuta0720-cmd/pymna-pro-v2/main/images/preset_r2r.png",
+    "super": "https://raw.githubusercontent.com/zyuta0720-cmd/pymna-pro-v2/main/images/preset_superposition.png",
+    "inv": "https://raw.githubusercontent.com/zyuta0720-cmd/pymna-pro-v2/main/images/preset_InvAmp.png",
+    "noninv": "https://raw.githubusercontent.com/zyuta0720-cmd/pymna-pro-v2/main/images/preset_NonInvAmp.png",
+    "hsd": "https://raw.githubusercontent.com/zyuta0720-cmd/pymna-pro-v2/main/images/preset_HSD_C_moni.png"
+}
 
 # --- 1. 単位変換エンジン ---
 UNIT_DICT = {
@@ -143,12 +166,23 @@ TEXTS = {
         "lt_check": "LTspice保存",
         "iter_check": "反復収束法",
         "run_btn": "解析実行",
+        "preset_grp": "プリセット",
+        "load_btn": "ロード",
+        "view_btn": "🔍 回路図を表示",
+        "mc_btn": "モンテカルロ解析",
+        "help_btn": "❓ ヘルプ",
+        "mc_seed": "シード:",
+        "dist_lbl": "分布:",
+        "dist_unif": "一様",
+        "dist_gauss": "正規",
         "res_header": "--- Node Voltages ---\nNode\tTyp[V]\tMin[V]\tMax[V]\n",
+        "mc_res_header": "\n--- Monte Carlo Statistics ---\nNode\tMean[V]\tStdDev\t-3sigma\t+3sigma\n",
         "presets": {
             "div": "R-2Rラダー回路",
             "super": "重ね合わせ回路",
             "inv": "反転増幅回路",
-            "noninv": "非反転増幅回路"
+            "noninv": "非反転増幅回路",
+            "hsd": "HSD電流モニタ"
         },
         "toggle_lang": "English Interface"
     },
@@ -160,22 +194,34 @@ TEXTS = {
         "lt_check": "Save LTspice",
         "iter_check": "Iterative Refinement",
         "run_btn": "RUN ANALYSIS",
+        "preset_grp": "Presets",
+        "view_btn": "🔍 View Circuit",
+        "load_btn": "Load",
+        "mc_btn": "Monte Carlo",
+        "help_btn": "❓ HELP",
+        "mc_seed": "Seed:",
+        "dist_lbl": "Dist:",
+        "dist_unif": "Unif",
+        "dist_gauss": "Gauss",
         "res_header": "--- Node Voltages ---\nNode\tTyp[V]\tMin[V]\tMax[V]\n",
+        "mc_res_header": "\n--- Monte Carlo Statistics ---\nNode\tMean[V]\tStdDev\t-3sigma\t+3sigma\n",
         "presets": {
             "div": "R-2R Ladder",
             "super": "Superposition",
             "inv": "Inverting Amp",
-            "noninv": "Non-Inverting Amp"
+            "noninv": "Non-Inverting Amp",
+            "hsd": "High-Side Monitor"
         },
         "toggle_lang": "日本語インターフェース"
     }
 }
 
 PRESET_DATA_RAW = {
-    "div": {"netlist": "V\tVin\t1\t0\t10\nR\tR1\t1\t2\t1k\t1\nR\tR2\t1\t0\t2k\t1\nR\tR3\t2\t3\t1k\t1\nR\tR4\t2\t0\t2k\t1\nR\tR5\t3\t4\t1k\t1\nR\tR6\t3\t0\t2k\t1\nR\tR7\t4\t5\t1k\t1\nR\tR8\t4\t0\t2k\t1\nR\tR9\t5\t0\t1k\t1", "ascii": "Vin(1)o--+--R1(1k)--+--R3(1k)--+--R5(1k)--+--R7(1k)--o(5)\n         |          |          |          |          |\n       R2(2k)     R4(2k)     R6(2k)     R8(2k)     R9(1k)\n         |          |          |          |          |\n        GND        GND        GND        GND        GND"},
-    "super": {"netlist": "V\tV1\t1\t0\t10\nV\tV2\t2\t0\t5\nR\tR1\t1\t3\t1k\t2\nR\tR2\t2\t3\t2k\t2\nR\tR3\t3\t0\t1k\t2", "ascii": "V1(10V) o---R1---+\n                 V2(5V) o---R2---+\n                              |\n                              R3\n                              |\n                              0"},
-    "inv": {"netlist": "V\tVin\t1\t0\t1\nR\tRin\t1\t2\t10k\t1\nR\tRf\t2\t3\t100k\t1\nE\tOP1\t3\t0\t2\t0\t100k", "ascii": "Vin--Rin--(-)\n            |       |\n            +--Rf---(+)/0"},
-    "noninv": {"netlist": "V\tVin\t1\t0\t1\nR\tR1\t3\t2\t10k\t1\nR\tR2\t2\t0\t100k\t1\nE\tOP1\t3\t0\t1\t2\t100k", "ascii": "Vin--+\n      |\n      R1\n      |\n      +--R2--0\n      |\n     (+)"}
+    "div": {"netlist": "V\tVin\t1\t0\t10\nR\tR1\t1\t2\t1k\t1\nR\tR2\t1\t0\t2k\t1\nR\tR3\t2\t3\t1k\t1\nR\tR4\t2\t0\t2k\t1\nR\tR5\t3\t4\t1k\t1\nR\tR6\t3\t0\t2k\t1\nR\tR7\t4\t5\t1k\t1\nR\tR8\t4\t0\t2k\t1\nR\tR9\t5\t0\t1k\t1"},
+    "super": {"netlist": "V\tV1\t1\t0\t10\nI\tI1\t2\t0\t1m\nR\tR1\t1\t3\t1k\t5\nR\tR2\t2\t3\t2k\t5\nR\tR3\t3\t0\t2k\t5"},
+    "inv": {"netlist": "V\tVin\t1\t0\t1\nR\tRin\t1\t2\t10k\t1\nR\tRf\t2\t3\t100k\t1\nE\tOP1\t3\t0\t0\t2\t100k"},
+    "noninv": {"netlist": "V\tVin\t1\t0\t1\nR\tR1\t3\t2\t90k\t1\nR\tR2\t2\t0\t10k\t1\nE\tOP1\t3\t0\t1\t2\t100k"},
+    "hsd": {"netlist": "V\tV1\t1\t0\t12\nV\tV_sense\t1\t2\t0\nR\tR_load\t2\t0\t12\t10\nF\tF_mirror\t0\t3\tV_sense\t0.001\nR\tR_monitor\t3\t0\t1k"}
 }
 
 # --- 3. メインGUI ---
@@ -219,92 +265,190 @@ class PyMNAProApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
+        # Calculate DPI scaling factor (96 DPI is standard 100% scale)
+        self.dpi_scale = self.winfo_fpixels('1i') / 96.0
+
         self.lang = "en" # Default to English
-        self.title("pymna-pro")
-        self.geometry("1400x950")
+        self.title(f"PyMNA Pro - Ver {VERSION} ({LAST_UPDATE})")
+        self.geometry(f"{int(1300*self.dpi_scale)}x{int(850*self.dpi_scale)}")
+        self.minsize(int(1100*self.dpi_scale), int(700*self.dpi_scale))
         self.configure(bg="#23272e")
 
-        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1) # Main editor row
 
-        # サイドバー
-        self.sidebar = tk.Frame(self, width=320, bg="#23272e", bd=0, highlightthickness=0)
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
-        
-        # 言語切り替えボタン
-        self.btn_lang = tk.Button(self.sidebar, text=TEXTS[self.lang]["toggle_lang"], command=self.toggle_language, font=("Segoe UI", 9), bg="#444", fg="white", relief="flat")
-        self.btn_lang.pack(anchor="ne", padx=5, pady=5)
+        # --- Ribbon UI ---
+        self.ribbon = tk.Frame(self, bg="#2d3139", height=int(120*self.dpi_scale), bd=1, relief="flat")
+        self.ribbon.grid(row=0, column=0, columnspan=3, sticky="ew")
 
-        self.lbl_guide_title = tk.Label(self.sidebar, text=TEXTS[self.lang]["guide_title"], font=("Segoe UI", 20, "bold"), fg="#00bfff", bg="#23272e", anchor="w")
-        self.lbl_guide_title.pack(pady=(10,8), padx=16, anchor="w")
+        # Group: Analysis
+        self.grp_analysis = tk.LabelFrame(self.ribbon, text="Analysis (Worst Case)", bg="#2d3139", fg="#abb2bf", font=("Segoe UI", int(9*self.dpi_scale)))
+        self.grp_analysis.pack(side="left", padx=10, pady=5, fill="y")
 
-        self.lbl_guide = tk.Label(self.sidebar, text=TEXTS[self.lang]["guide_text"], justify="left", font=("Consolas", 12), anchor="w", fg="#e0e0e0", bg="#23272e")
-        self.lbl_guide.pack(padx=16, pady=(0,8), fill="x")
+        self.btn_run = tk.Button(self.grp_analysis, text=TEXTS[self.lang]["run_btn"], command=self.execute, font=("Segoe UI", int(11*self.dpi_scale), "bold"), bg="#00bfff", fg="#23272e", relief="flat", width=15)
+        self.btn_run.pack(side="left", padx=10, pady=5)
 
-        # プリセットUIコンテナ
-        self.preset_frame = tk.Frame(self.sidebar, bg="#23272e")
-        self.preset_frame.pack(fill="x", padx=16, pady=(0,8))
-        self.preset_var = tk.StringVar(value="div") # IDで管理
-        self.update_preset_ui() # 初回構築
-
-        self.ascii_label = tk.Label(self.sidebar, text="", justify="left", anchor="nw", font=("Consolas", 9), fg="#b0ffb0", bg="#23272e")
-        self.ascii_label.pack(fill="x", padx=16, pady=(0,14))
-
-        # メインフレーム
-        self.main_frame = tk.Frame(self, bg="#23272e")
-        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
-        self.main_frame.grid_columnconfigure((0, 1), weight=1)
-        self.main_frame.grid_rowconfigure(1, weight=1)
-
-        self.input_text = tk.Text(self.main_frame, font=("Consolas", 13), borderwidth=0, relief="flat", bg="#181c22", fg="#e0e0e0", insertbackground="#00bfff", selectbackground="#2d3748")
-        self.input_text.grid(row=1, column=0, sticky="nsew", padx=(12,6), pady=12)
-        self.load_preset()
-
-        self.output_text = tk.Text(self.main_frame, font=("Consolas", 13), borderwidth=0, relief="flat", bg="#101216", fg="#00ff99", insertbackground="#00bfff", selectbackground="#2d3748")
-        self.output_text.grid(row=1, column=1, sticky="nsew", padx=(6,12), pady=12)
-
-        self.ctrl = tk.Frame(self.main_frame, bg="#23272e")
-        self.ctrl.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0,10))
+        self.opt_frame = tk.Frame(self.grp_analysis, bg="#2d3139")
+        self.opt_frame.pack(side="left", padx=5)
         self.iter_var = tk.BooleanVar(value=True)
+        self.chk_iter = tk.Checkbutton(self.opt_frame, text=TEXTS[self.lang]["iter_check"], variable=self.iter_var, font=("Segoe UI", int(9*self.dpi_scale)), fg="#e0e0e0", bg="#2d3139", selectcolor="#2d3139")
+        self.chk_iter.pack(anchor="w")
         self.lt_var = tk.BooleanVar(value=True)
-        self.chk_iter = tk.Checkbutton(self.ctrl, text=TEXTS[self.lang]["iter_check"], variable=self.iter_var, font=("Segoe UI", 11), fg="#e0e0e0", bg="#23272e", activebackground="#23272e", selectcolor="#23272e")
-        self.chk_iter.pack(side="left", padx=20)
-        self.chk_lt = tk.Checkbutton(self.ctrl, text=TEXTS[self.lang]["lt_check"], variable=self.lt_var, font=("Segoe UI", 11), fg="#e0e0e0", bg="#23272e", activebackground="#23272e", selectcolor="#23272e")
-        self.chk_lt.pack(side="left", padx=20)
-        self.btn_run = tk.Button(self.ctrl, text=TEXTS[self.lang]["run_btn"], command=self.execute, font=("Segoe UI", 12, "bold"), bg="#00bfff", fg="#23272e", activebackground="#0099cc", activeforeground="#ffffff", relief="flat", bd=0, width=18, height=2, cursor="hand2")
-        self.btn_run.pack(side="right", padx=20)
+        self.chk_lt = tk.Checkbutton(self.opt_frame, text=TEXTS[self.lang]["lt_check"], variable=self.lt_var, font=("Segoe UI", int(9*self.dpi_scale)), fg="#e0e0e0", bg="#2d3139", selectcolor="#2d3139")
+        self.chk_lt.pack(anchor="w")
 
-        self.btn_tornado = tk.Button(self.ctrl, text="Tornado Chart", command=self.generate_tornado_chart, font=("Segoe UI", 11), bg="#555", fg="white", relief="flat", state="disabled")
-        self.btn_tornado.pack(side="right", padx=(5, 0))
+        self.btn_tornado = tk.Button(self.grp_analysis, text="Tornado", command=self.generate_tornado_chart, font=("Segoe UI", int(10*self.dpi_scale), "bold"), bg="#444", fg="#abb2bf", relief="flat", state="disabled", width=10)
+        self.btn_tornado.pack(side="left", padx=10, pady=5)
 
+        # Group: Presets
+        self.grp_presets = tk.LabelFrame(self.ribbon, text=TEXTS[self.lang]["preset_grp"], bg="#2d3139", fg="#abb2bf", font=("Segoe UI", int(9*self.dpi_scale)))
+        self.grp_presets.pack(side="left", padx=10, pady=5, fill="y")
+        self.preset_var = tk.StringVar(value="div")
+
+        # Group: Monte Carlo
+        self.grp_mc = tk.LabelFrame(self.ribbon, text="Monte Carlo (Statistical)", bg="#2d3139", fg="#abb2bf", font=("Segoe UI", int(9*self.dpi_scale)))
+        self.grp_mc.pack(side="left", padx=10, pady=5, fill="y")
+
+        self.btn_mc = tk.Button(self.grp_mc, text=TEXTS[self.lang]["mc_btn"], command=self.run_monte_carlo, font=("Segoe UI", int(11*self.dpi_scale), "bold"), bg="#ff9800", fg="#23272e", relief="flat", width=15)
+        self.btn_mc.pack(side="left", padx=10, pady=5)
+
+        self.mc_settings = tk.Frame(self.grp_mc, bg="#2d3139")
+        self.mc_settings.pack(side="left", padx=5)
+        
+        # Runs & Seed row
+        row1 = tk.Frame(self.mc_settings, bg="#2d3139")
+        row1.pack(fill="x")
+        self.lbl_runs = tk.Label(row1, text="Runs:", font=("Segoe UI", int(8*self.dpi_scale)), fg="#abb2bf", bg="#2d3139")
+        self.lbl_runs.pack(side="left")
+        self.mc_runs_var = tk.StringVar(value="1000")
+        self.ent_mc = tk.Entry(row1, textvariable=self.mc_runs_var, width=5, font=("Segoe UI", int(9*self.dpi_scale)))
+        self.ent_mc.pack(side="left", padx=2)
+        self.lbl_seed = tk.Label(row1, text=TEXTS[self.lang]["mc_seed"], font=("Segoe UI", int(8*self.dpi_scale)), fg="#abb2bf", bg="#2d3139")
+        self.lbl_seed.pack(side="left", padx=(5,0))
+        self.mc_seed_var = tk.StringVar(value="")
+        self.ent_seed = tk.Entry(row1, textvariable=self.mc_seed_var, width=5, font=("Segoe UI", int(9*self.dpi_scale)))
+        self.ent_seed.pack(side="left", padx=2)
+
+        # Dist row
+        row2 = tk.Frame(self.mc_settings, bg="#2d3139")
+        row2.pack(fill="x", pady=2)
+        self.dist_var = tk.StringVar(value="uniform")
+        self.rb_unif = tk.Radiobutton(row2, text=TEXTS[self.lang]["dist_unif"], variable=self.dist_var, value="uniform", font=("Segoe UI", int(8*self.dpi_scale)), fg="#e0e0e0", bg="#2d3139", selectcolor="#2d3139")
+        self.rb_unif.pack(side="left")
+        self.rb_gauss = tk.Radiobutton(row2, text=TEXTS[self.lang]["dist_gauss"], variable=self.dist_var, value="gaussian", font=("Segoe UI", int(8*self.dpi_scale)), fg="#e0e0e0", bg="#2d3139", selectcolor="#2d3139")
+        self.rb_gauss.pack(side="left")
+
+        # Group: Settings & Help
+        self.grp_sys = tk.LabelFrame(self.ribbon, text="Settings & Help", bg="#2d3139", fg="#abb2bf", font=("Segoe UI", int(9*self.dpi_scale)))
+        self.grp_sys.pack(side="right", padx=10, pady=5, fill="y")
+
+        self.btn_lang = tk.Button(self.grp_sys, text=TEXTS[self.lang]["toggle_lang"], command=self.toggle_language, font=("Segoe UI", int(9*self.dpi_scale)), bg="#444", fg="white", relief="flat")
+        self.btn_lang.pack(padx=5, pady=2, fill="x")
+
+        self.btn_help = tk.Button(self.grp_sys, text=TEXTS[self.lang]["help_btn"], command=self.toggle_help, font=("Segoe UI", int(9*self.dpi_scale), "bold"), bg="#555", fg="white", relief="flat")
+        self.btn_help.pack(padx=5, pady=2, fill="x")
+
+        # --- Editor Area ---
+        self.main_container = tk.Frame(self, bg="#23272e")
+        self.main_container.grid(row=1, column=0, columnspan=3, sticky="nsew")
+        self.main_container.grid_columnconfigure(0, weight=1)
+        self.main_container.grid_columnconfigure(1, weight=1)
+        self.main_container.grid_rowconfigure(0, weight=1)
+
+        self.input_text = tk.Text(self.main_container, font=("Consolas", int(13*self.dpi_scale)), borderwidth=0, relief="flat", bg="#181c22", fg="#e0e0e0", insertbackground="#00bfff", selectbackground="#2d3748")
+        self.input_text.grid(row=0, column=0, sticky="nsew", padx=(12,6), pady=12)
+        self.input_text.bind("<KeyRelease>", self.update_status_hint)
+        self.input_text.bind("<ButtonRelease-1>", self.update_status_hint)
+
+        self.output_text = tk.Text(self.main_container, font=("Consolas", int(13*self.dpi_scale)), borderwidth=0, relief="flat", bg="#101216", fg="#00ff99", insertbackground="#00bfff", selectbackground="#2d3748")
+        self.output_text.grid(row=0, column=1, sticky="nsew", padx=(6,12), pady=12)
+
+        # --- Help Panel (Hidden by default) ---
+        self.help_panel = tk.Frame(self.main_container, bg="#3e4451", width=0, bd=1, relief="sunken")
+        # We don't grid it initially to keep it hidden
+        self.help_visible = False
+        
+        self.help_txt = tk.Text(self.help_panel, font=("Consolas", int(10*self.dpi_scale)), bg="#3e4451", fg="#e0e0e0", relief="flat", padx=10, pady=10)
+        self.help_txt.pack(fill="both", expand=True)
+        
+        # --- Status Bar ---
+        self.status_bar = tk.Frame(self, bg="#1c1e22", height=int(25*self.dpi_scale))
+        self.status_bar.grid(row=2, column=0, columnspan=3, sticky="ew")
+        self.lbl_status = tk.Label(self.status_bar, text=" Ready", font=("Segoe UI", int(9*self.dpi_scale)), fg="#abb2bf", bg="#1c1e22", anchor="w")
+        self.lbl_status.pack(side="left", fill="x")
+
+        # --- Initialization ---
+        self.update_preset_ui()
+        self.load_preset()
+        self.update_help_content()
         self.solver = None
         self.comps = None
         self.v_typ = None
 
+    def toggle_help(self):
+        if not self.help_visible:
+            self.help_panel.grid(row=0, column=2, sticky="nsew")
+            self.main_container.columnconfigure(2, minsize=int(350*self.dpi_scale))
+            self.help_visible = True
+        else:
+            self.help_panel.grid_remove()
+            self.main_container.columnconfigure(2, minsize=0)
+            self.help_visible = False
+
+    def update_help_content(self):
+        self.help_txt.config(state="normal")
+        self.help_txt.delete("1.0", "end")
+        self.help_txt.insert("end", TEXTS[self.lang]["guide_text"])
+        self.help_txt.config(state="disabled")
+
+    def update_status_hint(self, event=None):
+        try:
+            line_index = self.input_text.index("insert").split(".")[0]
+            line_text = self.input_text.get(f"{line_index}.0", f"{line_index}.end").strip().upper()
+            
+            if not line_text:
+                hint = "Ready"
+            elif line_text.startswith('R'): hint = "Resistor: R [Name] [n+] [n-] [Value] [Tol% or Min/Max]"
+            elif line_text.startswith('V'): hint = "Voltage Source: V [Name] [n+] [n-] [Value] [Tol% or Min/Max]"
+            elif line_text.startswith('I'): hint = "Current Source: I [Name] [n+] [n-] [Value] [Tol% or Min/Max]"
+            elif line_text.startswith('E'): hint = "Op-Amp/VCVS: E [Name] [out+] [out-] [in+] [in-] [Gain]"
+            elif line_text.startswith('F'): hint = "CCCS: F [Name] [out+] [out-] [VCTRL] [Gain] [Tol% or Min/Max]"
+            elif line_text.startswith('*') or line_text.startswith(';'): hint = "Comment line"
+            else: hint = "Syntax: Type [Name] [Nodes...] [Value] [Tolerance]"
+            
+            self.lbl_status.config(text=f" Syntax Hint: {hint}")
+        except:
+            pass
+
     def toggle_language(self):
         self.lang = "jp" if self.lang == "en" else "en"
         t = TEXTS[self.lang]
-        self.btn_lang.config(text=t["toggle_lang"])
-        self.lbl_guide_title.config(text=t["guide_title"])
-        self.lbl_guide.config(text=t["guide_text"])
-        self.chk_iter.config(text=t["iter_check"])
-        self.chk_lt.config(text=t["lt_check"])
-        self.btn_run.config(text=t["run_btn"])
+        self.btn_lang.config(text=t["toggle_lang"], font=("Segoe UI", int(9*self.dpi_scale)))
+        self.chk_iter.config(text=t["iter_check"], font=("Segoe UI", int(10*self.dpi_scale)))
+        self.chk_lt.config(text=t["lt_check"], font=("Segoe UI", int(10*self.dpi_scale)))
+        self.btn_run.config(text=t["run_btn"], font=("Segoe UI", int(11*self.dpi_scale), "bold"))
+        self.btn_mc.config(text=t["mc_btn"], font=("Segoe UI", int(10*self.dpi_scale), "bold"))
+        self.rb_unif.config(text=t["dist_unif"], font=("Segoe UI", int(8*self.dpi_scale)))
+        self.rb_gauss.config(text=t["dist_gauss"], font=("Segoe UI", int(8*self.dpi_scale)))
+        self.lbl_seed.config(text=t["mc_seed"])
+        self.grp_presets.config(text=t["preset_grp"])
+        self.btn_tornado.config(font=("Segoe UI", int(10*self.dpi_scale)))
+        self.btn_help.config(text=t["help_btn"])
+        self.update_help_content()
+        self.update_status_hint()
         self.update_preset_ui()
 
     def update_preset_ui(self):
-        for widget in self.preset_frame.winfo_children():
+        for widget in self.grp_presets.winfo_children():
             widget.destroy()
         
         t = TEXTS[self.lang]
-        tk.Label(self.preset_frame, text=t["preset_lbl"], font=("Segoe UI", 11, "bold"), fg="#ffffff", bg="#23272e").pack(anchor="w")
-        
         display_map = t["presets"]
         display_names = list(display_map.values())
+        
         current_id = self.preset_var.get()
         current_name = display_map.get(current_id, display_names[0])
-        
         self.disp_var = tk.StringVar(value=current_name)
         
         def on_change(selected_name):
@@ -312,13 +456,29 @@ class PyMNAProApp(tk.Tk):
                 if vname == selected_name:
                     self.preset_var.set(kid)
                     break
+
+        # Ribbon-style compact dropdown
+        om = tk.OptionMenu(self.grp_presets, self.disp_var, *display_names, command=on_change)
+        om.config(bg="#444", fg="white", highlightthickness=0, relief="flat", font=("Segoe UI", int(9*self.dpi_scale)), width=15)
+        om["menu"].config(bg="#444", fg="white", font=("Segoe UI", int(9*self.dpi_scale)))
+        om.pack(side="top", padx=5, pady=2)
         
-        om = tk.OptionMenu(self.preset_frame, self.disp_var, *display_names, command=on_change)
-        om.config(bg="#444", fg="white", highlightthickness=0, relief="flat")
-        om["menu"].config(bg="#444", fg="white")
-        om.pack(fill="x", pady=2)
+        btn_frame = tk.Frame(self.grp_presets, bg="#2d3139")
+        btn_frame.pack(side="top", fill="x", padx=5, pady=2)
+
+        btn_load = tk.Button(btn_frame, text=t["load_btn"], command=self.load_preset, font=("Segoe UI", int(9*self.dpi_scale), "bold"), bg="#00bfff", fg="#23272e", relief="flat")
+        btn_load.pack(side="left", fill="x", expand=True, padx=(0, 2))
         
-        tk.Button(self.preset_frame, text=t["load_btn"], command=self.load_preset, font=("Segoe UI", 10), bg="#00bfff", fg="#23272e").pack(fill="x", pady=4)
+        btn_view = tk.Button(btn_frame, text=t["view_btn"], command=self.view_circuit, font=("Segoe UI", int(8*self.dpi_scale)), bg="#444", fg="white", relief="flat")
+        btn_view.pack(side="left", fill="x", expand=True, padx=(2, 0))
+
+    def view_circuit(self):
+        key = self.preset_var.get()
+        url = PRESET_URLS.get(key)
+        if url:
+            webbrowser.open(url)
+        else:
+            messagebox.showinfo("Info", "Circuit diagram URL not defined for this preset.")
 
     def load_preset(self):
         key = self.preset_var.get()
@@ -327,7 +487,6 @@ class PyMNAProApp(tk.Tk):
             return
         self.input_text.delete("1.0", "end")
         self.input_text.insert("1.0", item["netlist"])
-        self.ascii_label.config(text=item["ascii"])
 
     def generate_tornado_chart(self):
         if not self.solver or not self.v_typ:
@@ -386,6 +545,120 @@ class PyMNAProApp(tk.Tk):
         ax.invert_yaxis()
         fig.tight_layout()
         plt.show()
+
+    def run_monte_carlo(self):
+        try:
+            raw = self.input_text.get("1.0", "end-1c").strip()
+            if not raw: return
+
+            try:
+                num_runs = int(self.mc_runs_var.get())
+            except ValueError:
+                messagebox.showerror("Error", "Invalid number of runs.")
+                return
+
+            seed_val = self.mc_seed_var.get().strip()
+            if seed_val:
+                np.random.seed(int(seed_val))
+
+            # Parse netlist (Same logic as execute)
+            lines = []
+            for l in raw.split('\n'):
+                l_strip = l.strip()
+                if not l_strip or l_strip.startswith(';') or l_strip.startswith('*'): continue
+                if ';' in l_strip: l_strip = l_strip.split(';', 1)[0].strip()
+                if l_strip: lines.append(l_strip)
+
+            netlist = [re.split(r'\t|\s+', l) for l in lines]
+            solver = MNASolver(netlist)
+
+            # Extract parameter info
+            comps = {}
+            for row in netlist:
+                rtype, name = row[0].upper(), row[1]
+                val = 0.0
+                v_min, v_max = 0.0, 0.0
+                if rtype in ['R', 'V', 'I']:
+                    val = parse_value(row[4])
+                    if len(row) > 5:
+                        tol_str = str(row[5]).strip()
+                        if '/' in tol_str:
+                            parts = tol_str.split('/')
+                            v_min, v_max = parse_value(parts[0]), parse_value(parts[1])
+                        else:
+                            tol = parse_value(tol_str)
+                            v_min, v_max = val*(1-tol/100), val*(1+tol/100)
+                    else: v_min, v_max = val, val
+                elif rtype == 'E':
+                    val = parse_value(row[6]) if len(row) > 6 else parse_value(row[4])
+                    v_min, v_max = val, val
+                elif rtype == 'F':
+                    val = parse_value(row[5]); v_min, v_max = val, val
+                comps[name] = {'typ': val, 'min': v_min, 'max': v_max}
+
+            # MC Iterations
+            dist_type = self.dist_var.get()
+            node_samples = {node: [] for node in solver.node_map.keys()}
+            for _ in range(num_runs):
+                params = {}
+                for name, d in comps.items():
+                    if d['min'] == d['max']:
+                        params[name] = d['typ']
+                    else:
+                        if dist_type == "gaussian":
+                            # Assume [min, max] range corresponds to +/- 3 sigma
+                            mu = d['typ']
+                            sigma_val = (d['max'] - d['min']) / 6
+                            if sigma_val > 0:
+                                val = np.random.normal(mu, sigma_val)
+                                params[name] = np.clip(val, d['min'], d['max'])
+                            else:
+                                params[name] = mu
+                        else:
+                            params[name] = np.random.uniform(d['min'], d['max'])
+                
+                volts = solver.solve(params)
+                for node in node_samples:
+                    node_samples[node].append(volts[node])
+
+            # Calculate Stats
+            report = TEXTS[self.lang]["mc_res_header"] + "-"*60 + "\n"
+            natural_sort_key = lambda s: [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
+            
+            for node in sorted(node_samples.keys(), key=natural_sort_key):
+                data = np.array(node_samples[node])
+                mean = np.mean(data)
+                std = np.std(data)
+                report += f"{node}\t{mean:.4f}\t{std:.4f}\t{mean-3*std:.4f}\t{mean+3*std:.4f}\n"
+
+            self.output_text.insert("end", report)
+            self.output_text.see("end")
+
+            # Plot Histogram for a selected node
+            target_node = simpledialog.askstring("Plot", "Enter node for distribution plot:", parent=self)
+            if target_node and target_node in node_samples:
+                data = np.array(node_samples[target_node])
+                mu, sigma = np.mean(data), np.std(data)
+                
+                plt.figure(f"Monte Carlo Distribution: Node {target_node}", figsize=(8, 5))
+                n, bins, patches = plt.hist(data, bins=30, density=True, alpha=0.7, color='skyblue', edgecolor='white', label='Simulated')
+                
+                # Overlay Normal Distribution Curve
+                if sigma > 0:
+                    y = ((1 / (np.sqrt(2 * np.pi) * sigma)) * np.exp(-0.5 * (1 / sigma * (bins - mu))**2))
+                    plt.plot(bins, y, '--', color='red', linewidth=2, label='Normal Dist. Fit')
+                
+                plt.axvline(mu, color='navy', linestyle='-', linewidth=2, label=f'Mean: {mu:.4f}')
+                dist_name = "Uniform" if dist_type == "uniform" else "Gaussian"
+                plt.title(f"Voltage Distribution at Node {target_node}\n({num_runs} runs, {dist_name} Sampling)")
+                plt.xlabel("Voltage [V]")
+                plt.ylabel("Probability Density")
+                plt.legend()
+                plt.grid(True, alpha=0.3)
+                plt.show()
+
+        except Exception as e:
+            messagebox.showerror("MC Error", str(e))
 
     def execute(self):
         try:
@@ -503,14 +776,14 @@ class PyMNAProApp(tk.Tk):
             self.solver = solver
             self.comps = comps
             self.v_typ = v_typ
-            self.btn_tornado.config(state="normal", bg="#4CAF50")
+            self.btn_tornado.config(state="normal", bg="#4CAF50", fg="#23272e")
 
             if self.lt_var.get():
                 self.save_asc(netlist, comps)
                 self.save_ltspice_netlist(netlist, comps)
 
         except Exception as e:
-            self.btn_tornado.config(state="disabled", bg="#555")
+            self.btn_tornado.config(state="disabled", bg="#444", fg="#abb2bf")
             messagebox.showerror("Error", str(e))
 
     def save_asc(self, netlist, comps):
